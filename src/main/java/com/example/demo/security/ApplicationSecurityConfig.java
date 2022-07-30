@@ -1,33 +1,25 @@
 package com.example.demo.security;
 
 
-import com.example.demo.auth.ApplicationUser;
 import com.example.demo.auth.ApplicationUserService;
+import com.example.demo.jwt.JwtConfig;
+import com.example.demo.jwt.JwtTokenVerifier;
+import com.example.demo.jwt.JwtUsernameAndPasswordAuthFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.ldap.EmbeddedLdapServerContextSourceFactoryBean;
-import org.springframework.security.config.ldap.LdapBindAuthenticationManagerFactory;
-import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.jdbc.JdbcDaoImpl;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
-import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
-import javax.sql.DataSource;
-import javax.xml.crypto.Data;
-import java.util.concurrent.TimeUnit;
+import java.security.Key;
 
 @Configuration
 @EnableGlobalMethodSecurity(prePostEnabled = true)
@@ -35,11 +27,15 @@ public class ApplicationSecurityConfig {
 
     private final PasswordEncoder passwordEncoder;
     private final ApplicationUserService applicationUserService;
+    private final Key key;
+    private final JwtConfig jwtConfig;
 
     @Autowired
-    public ApplicationSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService) {
+    public ApplicationSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService, Key key, JwtConfig jwtConfig) {
         this.applicationUserService = applicationUserService;
         this.passwordEncoder = passwordEncoder;
+        this.key = key;
+        this.jwtConfig = jwtConfig;
     }
 
     @Bean
@@ -47,32 +43,15 @@ public class ApplicationSecurityConfig {
         // Order of antMatchers matters with checking.
         return httpSecurity
                 .csrf().disable()
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .and()
+//                .addFilter(new JwtUsernameAndPasswordAuthFilter(authenticationManager()))
+                .addFilterAfter(new JwtTokenVerifier(key, jwtConfig), JwtUsernameAndPasswordAuthFilter.class)
                 .authorizeRequests()
                 .antMatchers("/", "index", "/css/*", "/js/*").permitAll()
                 .antMatchers("/api/**").hasRole(ApplicationUserRole.STUDENT.name())
                 .anyRequest()
                 .authenticated()
-                .and()
-                .formLogin()
-                .loginPage("/login").permitAll()
-                .defaultSuccessUrl("/courses", true)
-                .usernameParameter("username")
-                .passwordParameter("password")
-                .and()
-                .rememberMe() // 2 weeks
-//                .tokenRepository() // This is for database
-                .tokenValiditySeconds((int) TimeUnit.DAYS.toSeconds(21))
-                .key("somethingverysecured") // Has the key
-                .rememberMeParameter("remember-me")
-                .and()
-                .logout()
-                .logoutUrl("/logout")
-                // It is a best practice to use a POST request whenever you enable csrf
-                .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "GET"))
-                .clearAuthentication(true)
-                .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID", "remember-me")
-                .logoutSuccessUrl("/login")
                 .and()
                 .build();
     }
